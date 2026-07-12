@@ -4,10 +4,12 @@ Pi extension that evaluates every Pi `tool_call` against Open Policy Agent (OPA)
 
 ## Policy contract
 
-Policy files use the OPA/Rego package `opa.enforcer` and must expose a boolean `allow` value. For example:
+⚠️ this is subject to change (or at least be configurable). currently it follows the package format of [NclaveAI](https://github.com/steffenboe/NclaveAI)
+
+Policy files use the OPA/Rego package `ops.agent` and must expose a boolean `allow` value. For example:
 
 ```rego
-package opa.enforcer
+package ops.agent
 
 import rego.v1
 

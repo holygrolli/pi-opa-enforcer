@@ -7,7 +7,7 @@ import os from "node:os";
 import { spawn } from "node:child_process";
 
 /**
- * OPA policy input. Policies must use `package opa.enforcer` and expose `allow`.
+ * OPA policy input. Policies must use `package ops.agent` and expose `allow`.
  * Example: `allow if input.tool.name == "read"`.
  */
 export type OpaEnforcerInput = {
@@ -75,7 +75,7 @@ export async function findRego(root: string): Promise<string[]> {
       if (entry.name === "node_modules" || entry.name === ".git") continue;
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) await walk(full);
-      else if (entry.isFile() && entry.name.endsWith(".rego")) output.push(full);
+      else if (entry.isFile() && entry.name.endsWith(".rego") && !entry.name.endsWith("_test.rego")) output.push(full);
     }
   };
   await walk(root);
@@ -114,12 +114,12 @@ function run(command: string, args: string[], input: string): Promise<{ code: nu
 }
 
 export async function evaluate(input: OpaEnforcerInput, files: string[]): Promise<{ allow: boolean; reason?: string }> {
-  if (files.length === 0) return { allow: true, reason: "No opa.enforcer policy found" };
+  if (files.length === 0) return { allow: true, reason: "No ops.agent policy found" };
   const opa = process.env[OPA_ENV] || "opa";
   const errors: string[] = [];
 
   for (const file of files) {
-    const args = ["eval", "--format=json", "--stdin-input", "--data", file, "data.opa.enforcer.allow"];
+    const args = ["eval", "--format=json", "--stdin-input", "--data", file, "data.ops.agent.allow"];
     let result;
     try { result = await run(opa, args, JSON.stringify(input)); }
     catch (error) { return { allow: false, reason: `Rego interpreter unavailable: ${String(error)}` }; }
@@ -133,7 +133,7 @@ export async function evaluate(input: OpaEnforcerInput, files: string[]): Promis
       const parsed = JSON.parse(result.stdout) as OpaResponse;
       const value = parsed.result?.[0]?.expressions?.[0]?.value;
       if (value === true) return { allow: true };
-      if (value !== false) errors.push(`${file}: Policy did not return boolean data.opa.enforcer.allow`);
+      if (value !== false) errors.push(`${file}: Policy did not return boolean data.ops.agent.allow`);
     } catch (error) {
       errors.push(`${file}: Invalid Rego interpreter response: ${String(error)}`);
     }
@@ -181,7 +181,7 @@ class PolicyConfigComponent {
   render(width: number): string[] {
     const th = this.theme;
     const lines = ["", truncateToWidth(` ${th.fg("accent", "OPA Enforcer policies")} `, width), "",
-      truncateToWidth(` ${this.selected === 0 ? th.fg("accent", "▸") : " "} ${this.isGloballyDisabled() ? "☐" : "☑"} Temporarily disable all policies`, width), ""];
+      truncateToWidth(` ${this.selected === 0 ? th.fg("accent", "▸") : " "} ${this.isGloballyDisabled() ? "☑": "☐" } Temporarily disable all policies`, width), ""];
     if (this.files.length === 0) lines.push(` ${th.fg("dim", "No policy files loaded")}`);
     for (let i = 0; i < this.files.length; i++) {
       const disabled = this.config.disabledPolicies.some(file => path.resolve(file) === path.resolve(this.files[i]));

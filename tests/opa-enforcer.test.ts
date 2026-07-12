@@ -22,7 +22,7 @@ describe("opa-enforcer helpers", () => {
   });
 
   it("allows calls when no policy exists", async () => {
-    expect(await evaluate(input, [])).toEqual({ allow: true, reason: "No opa.enforcer policy found" });
+    expect(await evaluate(input, [])).toEqual({ allow: true, reason: "No ops.agent policy found" });
   });
 
   it("fails closed when OPA is unavailable", async () => {
@@ -35,9 +35,9 @@ describe("opa-enforcer helpers", () => {
   it("finds Rego files recursively while skipping dependencies", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "opa-enforcer-"));
     await fs.mkdir(path.join(root, "nested", "node_modules"), { recursive: true });
-    await fs.writeFile(path.join(root, "policy.rego"), "package opa.enforcer");
-    await fs.writeFile(path.join(root, "nested", "other.rego"), "package opa.enforcer");
-    await fs.writeFile(path.join(root, "nested", "node_modules", "ignored.rego"), "package opa.enforcer");
+    await fs.writeFile(path.join(root, "policy.rego"), "package ops.agent");
+    await fs.writeFile(path.join(root, "nested", "other.rego"), "package ops.agent");
+    await fs.writeFile(path.join(root, "nested", "node_modules", "ignored.rego"), "package ops.agent");
     await expect(findRego(root)).resolves.toEqual([
       path.join(root, "nested", "other.rego"),
       path.join(root, "policy.rego"),
@@ -48,7 +48,7 @@ describe("opa-enforcer helpers", () => {
   it("accepts explicitly configured Rego files", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "opa-enforcer-"));
     const file = path.join(root, "policy.rego");
-    await fs.writeFile(file, "package opa.enforcer");
+    await fs.writeFile(file, "package ops.agent");
     process.env.OPA_ENFORCER_POLICY = file;
     await expect(policyFiles(path.join(root, "project"))).resolves.toContain(file);
     await fs.rm(root, { recursive: true, force: true });
