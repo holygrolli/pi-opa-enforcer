@@ -1,5 +1,5 @@
 {
-  "name": "@pi-pa/opa-enforcer",
+  "name": "@pi-pa/pi-opa-enforcer",
   "version": "0.1.0",
   "description": "Policy enforcement and JSONL auditing for Pi tool calls using Open Policy Agent",
   "license": "MIT",
