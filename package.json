@@ -1,0 +1,39 @@
+{
+  "name": "@pi-pa/opa-enforcer",
+  "version": "0.1.0",
+  "description": "Policy enforcement and JSONL auditing for Pi tool calls using Open Policy Agent",
+  "license": "MIT",
+  "type": "module",
+  "keywords": ["pi-package", "pi-extension", "opa", "rego", "policy"],
+  "files": ["dist", "index.ts", "README.md", "LICENSE"],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "pi": {
+    "extensions": ["./dist/index.js"]
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "prepare": "npm run build",
+    "prepack": "npm run build && npm test"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.80.6",
+    "@types/node": "^22.15.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
