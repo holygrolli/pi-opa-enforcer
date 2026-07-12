@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { appendAudit, auditPath, evaluate, findRego, policyFiles } from "../index.js";
+import { appendAudit, auditPath, configPath, enabledPolicyFiles, evaluate, findRego, loadConfig, policyFiles, saveConfig } from "../index.js";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -52,6 +52,21 @@ describe("opa-enforcer helpers", () => {
     process.env.OPA_ENFORCER_POLICY = file;
     await expect(policyFiles(path.join(root, "project"))).resolves.toContain(file);
     await fs.rm(root, { recursive: true, force: true });
+  });
+
+  it("loads and saves disabled policies, and filters them", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "opa-enforcer-"));
+    const configFile = path.join(root, "opa-enforcer.json");
+    const policyA = path.join(root, "a.rego");
+    const policyB = path.join(root, "b.rego");
+    await saveConfig({ disabledPolicies: [policyB, policyB] }, configFile);
+    await expect(loadConfig(configFile)).resolves.toEqual({ disabledPolicies: [policyB] });
+    expect(enabledPolicyFiles([policyA, policyB], await loadConfig(configFile))).toEqual([policyA]);
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  it("uses the extension config path under the Pi agent directory", () => {
+    expect(configPath("/tmp/home")).toBe("/tmp/home/.pi/agent/opa-enforcer.json");
   });
 
   it("writes one JSONL audit record", async () => {

@@ -33,6 +33,10 @@ If policies exist but OPA is unavailable, evaluation fails closed. If no policy 
 2. `<project>/.pi`
 3. the current project directory
 
+## Configuration
+
+Run `/opa-enforcer-config` in interactive Pi. The dialog lists every loaded `.rego` policy. Navigate with the arrow keys and press Space to toggle the selected policy; individual disabled policies are persisted in `$HOME/.pi/agent/opa-enforcer.json` and restored on startup. The first row is a temporary global disable switch and is never persisted. Enter or Escape closes the dialog.
+
 ## Audit log
 
 Each call and result is JSONL at `<default-session-file>.audit.jsonl`, next to Pi's default session log. Blocked calls are logged before the block is returned. Result records include successful and failed tool executions.

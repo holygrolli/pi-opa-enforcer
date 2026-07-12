@@ -1,5 +1,6 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
 import { CONFIG_DIR_NAME } from "@earendil-works/pi-coding-agent";
+import { matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
@@ -30,6 +31,35 @@ type AuditRecord = {
 
 const POLICY_ENV = "OPA_ENFORCER_POLICY";
 const OPA_ENV = "OPA_ENFORCER_OPA_BIN";
+const CONFIG_FILE_NAME = "opa-enforcer.json";
+
+export type OpaEnforcerConfig = { disabledPolicies: string[] };
+
+/** The extension-owned config lives beside Pi's global settings. */
+export function configPath(home = process.env.HOME ?? os.homedir()): string {
+  return path.join(home, ".pi", "agent", CONFIG_FILE_NAME);
+}
+
+export async function loadConfig(file = configPath()): Promise<OpaEnforcerConfig> {
+  try {
+    const value = JSON.parse(await fs.readFile(file, "utf8")) as Partial<OpaEnforcerConfig>;
+    return { disabledPolicies: Array.isArray(value.disabledPolicies) ? value.disabledPolicies.filter((p): p is string => typeof p === "string") : [] };
+  } catch {
+    return { disabledPolicies: [] };
+  }
+}
+
+export async function saveConfig(config: OpaEnforcerConfig, file = configPath()): Promise<void> {
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  const temporary = `${file}.${process.pid}.tmp`;
+  await fs.writeFile(temporary, JSON.stringify({ disabledPolicies: [...new Set(config.disabledPolicies)].sort() }, null, 2) + "\n", "utf8");
+  await fs.rename(temporary, file);
+}
+
+export function enabledPolicyFiles(files: string[], config: OpaEnforcerConfig): string[] {
+  const disabled = new Set(config.disabledPolicies.map(file => path.resolve(file)));
+  return files.filter(file => !disabled.has(path.resolve(file)));
+}
 
 export async function exists(file: string): Promise<boolean> {
   try { await fs.access(file); return true; } catch { return false; }
@@ -124,16 +154,76 @@ export async function appendAudit(file: string, record: AuditRecord): Promise<vo
   await fs.appendFile(file, JSON.stringify(record) + "\n", "utf8");
 }
 
+class PolicyConfigComponent {
+  private selected = 0;
+  constructor(
+    private readonly files: string[],
+    private readonly config: OpaEnforcerConfig,
+    private readonly isGloballyDisabled: () => boolean,
+    private readonly toggleGlobal: () => void,
+    private readonly onPolicyToggle: (file: string) => void,
+    private readonly theme: Theme,
+    private readonly close: () => void,
+  ) {}
+
+  handleInput(data: string): void {
+    if (matchesKey(data, "escape") || matchesKey(data, "enter")) { this.close(); return; }
+    if (matchesKey(data, "up") || data === "k") this.selected = Math.max(0, this.selected - 1);
+    else if (matchesKey(data, "down") || data === "j") this.selected = Math.min(this.files.length, this.selected + 1);
+    else if (matchesKey(data, "space")) {
+      if (this.selected === 0) this.toggleGlobal();
+      else this.onPolicyToggle(this.files[this.selected - 1]);
+    }
+  }
+
+  invalidate(): void {}
+
+  render(width: number): string[] {
+    const th = this.theme;
+    const lines = ["", truncateToWidth(` ${th.fg("accent", "OPA Enforcer policies")} `, width), "",
+      truncateToWidth(` ${this.selected === 0 ? th.fg("accent", "▸") : " "} ${this.isGloballyDisabled() ? "☐" : "☑"} Temporarily disable all policies`, width), ""];
+    if (this.files.length === 0) lines.push(` ${th.fg("dim", "No policy files loaded")}`);
+    for (let i = 0; i < this.files.length; i++) {
+      const disabled = this.config.disabledPolicies.some(file => path.resolve(file) === path.resolve(this.files[i]));
+      const marker = this.selected === i + 1 ? th.fg("accent", "▸") : " ";
+      lines.push(truncateToWidth(` ${marker} ${disabled ? "☐" : "☑"} ${this.files[i]}`, width));
+    }
+    lines.push("", truncateToWidth(` ${th.fg("dim", "↑/↓ select  Space toggle  Enter/Escape close")}`, width), "");
+    return lines;
+  }
+}
+
 export default function (pi: ExtensionAPI) {
   let cwd = process.cwd();
   let sessionFile: string | undefined;
   let files: string[] = [];
+  let config: OpaEnforcerConfig = { disabledPolicies: [] };
+  let globalDisabled = false;
   const calls = new Map<string, OpaEnforcerInput>();
 
   pi.on("session_start", async (_event, ctx) => {
     cwd = ctx.cwd;
     sessionFile = ctx.sessionManager.getSessionFile() ?? undefined;
     files = await policyFiles(cwd);
+    config = await loadConfig();
+  });
+
+  pi.registerCommand("opa-enforcer-config", {
+    description: "Configure OPA Enforcer policies",
+    handler: async (_args, ctx) => {
+      if (!ctx.hasUI) return;
+      files = await policyFiles(ctx.cwd);
+      await ctx.ui.custom<void>((_tui, theme, _keybindings, done) => new PolicyConfigComponent(
+        files, config, () => globalDisabled, () => { globalDisabled = !globalDisabled; },
+        (file) => {
+          const normalized = path.resolve(file);
+          config.disabledPolicies = config.disabledPolicies.some(p => path.resolve(p) === normalized)
+            ? config.disabledPolicies.filter(p => path.resolve(p) !== normalized)
+            : [...config.disabledPolicies, normalized];
+          void saveConfig(config).catch(error => ctx.ui.notify(`Could not save OPA config: ${String(error)}`, "error"));
+        }, theme, () => done(),
+      ));
+    },
   });
 
   pi.on("tool_call", async (event, ctx) => {
@@ -145,7 +235,9 @@ export default function (pi: ExtensionAPI) {
       session: { id: ctx.sessionManager.getSessionId(), file: ctx.sessionManager.getSessionFile() ?? undefined },
     };
     calls.set(event.toolCallId, input);
-    const decision = await evaluate(input, files);
+    const decision = globalDisabled
+      ? { allow: true, reason: "OPA Enforcer temporarily disabled" }
+      : await evaluate(input, enabledPolicyFiles(files, config));
     const record: AuditRecord = {
       timestamp: new Date().toISOString(), event: "tool_call", allowed: decision.allow,
       blocked: !decision.allow, reason: decision.reason, tool: input.tool, cwd: ctx.cwd,
